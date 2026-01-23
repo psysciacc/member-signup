@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Collaboration Signup</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 600px;
+        margin: 60px auto;
+        padding: 20px;
+      }
+      input,
+      textarea,
+      button {
+        width: 100%;
+        padding: 10px;
+        margin-top: 6px;
+        margin-bottom: 20px;
+        font-size: 16px;
+      }
+      button {
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Sign up to join the collaboration</h2>
+
+    <form id="signupForm">
+      <label>First Name</label>
+      <input type="text" id="first_name" required />
+
+      <label>Last Name</label>
+      <input type="text" id="last_name" required />
+
+      <label>Email</label>
+      <input type="email" id="email" required />
+
+      <label>Projects you’re interested in / notes</label>
+      <textarea id="project_notes" rows="4"></textarea>
+
+      <button type="submit">Sign Up</button>
+    </form>
+
+    <script>
+      document
+        .getElementById("signupForm")
+        .addEventListener("submit", function (e) {
+          e.preventDefault();
+
+          const first = encodeURIComponent(
+            document.getElementById("first_name").value,
+          );
+          const last = encodeURIComponent(
+            document.getElementById("last_name").value,
+          );
+          const email = encodeURIComponent(
+            document.getElementById("email").value,
+          );
+          const notes = encodeURIComponent(
+            document.getElementById("project_notes").value,
+          );
+
+          const issueBody = `
+First Name
+${first}
+
+Last Name
+${last}
+
+Email
+${email}
+
+Projects you’re interested in / notes
+${notes}
+`;
+
+          const url = `https://github.com/psysciacc/member-signup/issues/new?labels=signup&body=${issueBody}`;
+
+          window.location.href = url;
+        });
+    </script>
+  </body>
+</html>
