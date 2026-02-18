@@ -14,6 +14,7 @@
       textarea,
       button {
         width: 100%;
+        box-sizing: border-box;
         padding: 10px;
         margin-top: 6px;
         margin-bottom: 20px;
@@ -25,7 +26,26 @@
     </style>
   </head>
   <body>
-    <h2>Sign up to join the collaboration</h2>
+    <div
+      style="
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 60px;
+        margin-bottom: 40px;
+      "
+    >
+      <img src="psa-logo.png" alt="PSA Logo" style="height: 80px" />
+      <img
+        src="many-languages-logo.png"
+        alt="Many Languages Logo"
+        style="height: 80px"
+      />
+    </div>
+
+    <div style="text-align: center">
+      <h2>Sign up to join the collaboration</h2>
+    </div>
 
     <form id="signupForm">
       <label>First Name</label>
@@ -40,45 +60,101 @@
       <label>Projects you’re interested in / notes</label>
       <textarea id="project_notes" rows="4"></textarea>
 
+      <label
+        style="
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 20px;
+        "
+      >
+        <input
+          type="checkbox"
+          id="join_accelerator"
+          style="width: auto; margin: 0; transform: translateY(2px)"
+        />
+        <span>I would like to join the Psychological Science Accelerator</span>
+      </label>
+
+      <label
+        style="
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 20px;
+        "
+      >
+        <input
+          type="checkbox"
+          id="join_many_languages"
+          style="width: auto; margin: 0; transform: translateY(2px)"
+        />
+        <span>I would like to join ManyLanguages</span>
+      </label>
+
       <button type="submit">Sign Up</button>
     </form>
 
     <script>
+      const WORKER_URL = "https://psa-member-signup.buchananlab.workers.dev/";
+
       document
         .getElementById("signupForm")
-        .addEventListener("submit", function (e) {
+        .addEventListener("submit", async function (e) {
           e.preventDefault();
 
-          const first = encodeURIComponent(
-            document.getElementById("first_name").value,
-          );
-          const last = encodeURIComponent(
-            document.getElementById("last_name").value,
-          );
-          const email = encodeURIComponent(
-            document.getElementById("email").value,
-          );
-          const notes = encodeURIComponent(
-            document.getElementById("project_notes").value,
-          );
+          const first = document.getElementById("first_name").value.trim();
+          const last = document.getElementById("last_name").value.trim();
+          const email = document.getElementById("email").value.trim();
+          const notes = document.getElementById("project_notes").value.trim();
 
-          const issueBody = `
-First Name
-${first}
+          const joinAccelerator = document.getElementById("join_accelerator")
+            .checked
+            ? "Yes"
+            : "No";
+          const joinManyLanguages = document.getElementById(
+            "join_many_languages",
+          ).checked
+            ? "Yes"
+            : "No";
 
-Last Name
-${last}
+          try {
+            const response = await fetch(WORKER_URL, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                first,
+                last,
+                email,
+                notes,
+                joinAccelerator,
+                joinManyLanguages,
+              }),
+            });
 
-Email
-${email}
+            if (!response.ok) {
+              throw new Error("Submission failed");
+            }
 
-Projects you’re interested in / notes
-${notes}
-`;
-
-          const url = `https://github.com/psysciacc/member-signup/issues/new?labels=signup&body=${issueBody}`;
-
-          window.location.href = url;
+            document.getElementById("signupForm").innerHTML = `
+              <h3>Thank you for signing up!</h3>
+              <p>Your information has been successfully recorded.</p>
+              <p>
+                You will receive information about joining the Psychological Science
+                Accelerator and/or Many Languages shortly.
+              </p>
+            `;
+          } catch (err) {
+            document.getElementById("signupForm").innerHTML = `
+              <h3>Something went wrong</h3>
+              <p>
+                We were unable to record your signup automatically.
+                Please try again in a few moments.
+              </p>
+            `;
+          }
         });
     </script>
   </body>
