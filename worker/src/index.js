@@ -53,6 +53,7 @@ async function sendEmail(env, { to, subject, text, html: htmlBody }) {
     body: JSON.stringify({
       personalizations: [{ to: [{ email: to }] }],
       from: { email: env.FROM_EMAIL },
+      reply_to: { email: env.ADMIN_EMAIL },
       subject,
       content: [
         { type: "text/plain", value: text },

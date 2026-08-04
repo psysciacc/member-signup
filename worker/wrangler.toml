@@ -7,7 +7,7 @@ compatibility_date = "2024-11-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "psa-member-signup"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "b2d36cea-e776-4cbc-b21b-470de9d27d08"
 
 # Set the real values as secrets, not here:
 #   wrangler secret put SENDGRID_API_KEY
@@ -15,10 +15,10 @@ database_id = "REPLACE_WITH_D1_DATABASE_ID"
 #   wrangler secret put CANVAS_API_TOKEN
 [vars]
 ADMIN_EMAIL = "psa.membersite@gmail.com"
-FROM_EMAIL = "psa.membersite@gmail.com"
+FROM_EMAIL = "canvas@psysciacc.org"
 CANVAS_BASE_URL = "https://canvas.psysciacc.org"
-CANVAS_ACCOUNT_ID = "REPLACE_WITH_CANVAS_ACCOUNT_ID"
-ALLOWED_ORIGIN = "https://psysciacc.github.io"
+CANVAS_ACCOUNT_ID = "1"
+ALLOWED_ORIGIN = "https://member.psysciacc.org"
 # Spam controls: reject submissions faster than this (bots skip the "fill out a form" delay)...
 MIN_SUBMIT_MS = "3000"
 # ...and cap how many /submit attempts one IP can make per hour.
