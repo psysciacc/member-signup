@@ -1,0 +1,21 @@
+name = "psa-member-signup"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# Created with: wrangler d1 create psa-member-signup
+# Then paste the resulting database_id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "psa-member-signup"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# Set the real values as secrets, not here:
+#   wrangler secret put SENDGRID_API_KEY
+#   wrangler secret put HMAC_SECRET
+#   wrangler secret put CANVAS_API_TOKEN
+[vars]
+ADMIN_EMAIL = "psa.membersite@gmail.com"
+FROM_EMAIL = "psa.membersite@gmail.com"
+CANVAS_BASE_URL = "https://canvas.psysciacc.org"
+CANVAS_ACCOUNT_ID = "REPLACE_WITH_CANVAS_ACCOUNT_ID"
+ALLOWED_ORIGIN = "https://psysciacc.github.io"

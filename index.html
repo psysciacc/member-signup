@@ -60,6 +60,12 @@
       <label>Projects you’re interested in / notes</label>
       <textarea id="project_notes" rows="4"></textarea>
 
+      <!-- Honeypot field: hidden from real users, bots often fill it in -->
+      <div style="position: absolute; left: -9999px" aria-hidden="true">
+        <label for="website">Website</label>
+        <input type="text" id="website" name="website" tabindex="-1" autocomplete="off" />
+      </div>
+
       <label
         style="
           display: flex;
@@ -96,7 +102,8 @@
     </form>
 
     <script>
-      const WORKER_URL = "https://psa-member-signup.buchananlab.workers.dev/";
+      // Update this once the worker is deployed (see worker/README.md).
+      const WORKER_URL = "https://psa-member-signup.<your-subdomain>.workers.dev/submit";
 
       document
         .getElementById("signupForm")
@@ -117,6 +124,7 @@
           ).checked
             ? "Yes"
             : "No";
+          const website = document.getElementById("website").value.trim();
 
           try {
             const response = await fetch(WORKER_URL, {
@@ -131,6 +139,7 @@
                 notes,
                 joinAccelerator,
                 joinManyLanguages,
+                website,
               }),
             });
 
