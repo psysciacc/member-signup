@@ -105,6 +105,11 @@
       // Update this once the worker is deployed (see worker/README.md).
       const WORKER_URL = "https://psa-member-signup.<your-subdomain>.workers.dev/submit";
 
+      // Timestamp when the form became interactive; the worker rejects submissions
+      // that happen implausibly fast (a sign of a scripted bot, not a person filling
+      // out the form).
+      const formRenderedAt = Date.now();
+
       document
         .getElementById("signupForm")
         .addEventListener("submit", async function (e) {
@@ -140,6 +145,7 @@
                 joinAccelerator,
                 joinManyLanguages,
                 website,
+                renderedAt: formRenderedAt,
               }),
             });
 

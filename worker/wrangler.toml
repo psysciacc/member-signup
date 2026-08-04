@@ -19,3 +19,7 @@ FROM_EMAIL = "psa.membersite@gmail.com"
 CANVAS_BASE_URL = "https://canvas.psysciacc.org"
 CANVAS_ACCOUNT_ID = "REPLACE_WITH_CANVAS_ACCOUNT_ID"
 ALLOWED_ORIGIN = "https://psysciacc.github.io"
+# Spam controls: reject submissions faster than this (bots skip the "fill out a form" delay)...
+MIN_SUBMIT_MS = "3000"
+# ...and cap how many /submit attempts one IP can make per hour.
+RATE_LIMIT_PER_HOUR = "5"

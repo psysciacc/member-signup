@@ -76,10 +76,20 @@ Commit and push — GitHub Pages picks it up automatically.
 
 ## Spam mitigation
 
-The form has a hidden "website" honeypot field; the Worker silently accepts (but
-discards) submissions where it's filled in, since real users never see or fill it.
-If spam gets past that, the Approve/Deny gate is the real backstop — nothing reaches
-Canvas without a human click.
+Three layers, all silent (rejected requests get the same `{ok:true}` response as a
+real success, so scripted spam can't tell what tripped the filter and adapt):
+
+- **Honeypot** — a hidden "website" field real users never see or fill in; the
+  Worker discards anything that fills it.
+- **Time-trap** (`MIN_SUBMIT_MS`) — the form records when it loaded and sends that
+  timestamp; submissions faster than `MIN_SUBMIT_MS` (default 3s) are rejected as
+  implausibly fast for a human filling out a form.
+- **IP rate limit** (`RATE_LIMIT_PER_HOUR`) — each `/submit` attempt is logged with
+  its IP in `submission_attempts`; an IP making more than `RATE_LIMIT_PER_HOUR`
+  attempts in a rolling hour is rejected.
+
+If spam gets past all of that, the Approve/Deny gate is the real backstop — nothing
+reaches Canvas without a human click.
 
 ## Exporting a CSV
 

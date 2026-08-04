@@ -88,6 +88,14 @@ async function createCanvasUser(env, { first, last, email }) {
   return data.id;
 }
 
+function rejectSilently(env) {
+  // Looks identical to a real success response so scripted spam doesn't learn
+  // what tripped the filter and adapt.
+  return new Response(JSON.stringify({ ok: true }), {
+    headers: { "Content-Type": "application/json", ...corsHeaders(env) },
+  });
+}
+
 async function handleSubmit(request, env) {
   const body = await request.json();
   const first = (body.first || "").trim();
@@ -97,11 +105,33 @@ async function handleSubmit(request, env) {
   const joinAccelerator = body.joinAccelerator === "Yes" ? "Yes" : "No";
   const joinManyLanguages = body.joinManyLanguages === "Yes" ? "Yes" : "No";
 
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const now = new Date();
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+
+  await env.DB.prepare("INSERT INTO submission_attempts (ip, created_at) VALUES (?, ?)")
+    .bind(ip, now.toISOString())
+    .run();
+
+  const { count } = await env.DB.prepare(
+    "SELECT COUNT(*) as count FROM submission_attempts WHERE ip = ? AND created_at > ?",
+  )
+    .bind(ip, oneHourAgo)
+    .first();
+
+  if (count > Number(env.RATE_LIMIT_PER_HOUR)) {
+    return rejectSilently(env);
+  }
+
   // Honeypot field: real users never fill this in, bots often do.
   if (body.website) {
-    return new Response(JSON.stringify({ ok: true }), {
-      headers: { "Content-Type": "application/json", ...corsHeaders(env) },
-    });
+    return rejectSilently(env);
+  }
+
+  // Time-trap: a real person needs at least a few seconds to fill out the form.
+  const elapsed = Date.now() - Number(body.renderedAt || 0);
+  if (!Number.isFinite(elapsed) || elapsed < Number(env.MIN_SUBMIT_MS)) {
+    return rejectSilently(env);
   }
 
   if (!first || !last || !email) {
