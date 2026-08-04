@@ -66,7 +66,10 @@ async function sendEmail(env, { to, subject, text, html: htmlBody }) {
   }
 }
 
-async function createCanvasUser(env, { first, last, email }) {
+// sisUserId is our own D1 `signups.id` — the SIS-visible identifier Canvas uses
+// for this person, so enrollments can reference them without ever matching on
+// name/email fuzziness.
+async function createCanvasUser(env, { first, last, email, sisUserId }) {
   const res = await fetch(
     `${env.CANVAS_BASE_URL}/api/v1/accounts/${env.CANVAS_ACCOUNT_ID}/users`,
     {
@@ -77,7 +80,11 @@ async function createCanvasUser(env, { first, last, email }) {
       },
       body: JSON.stringify({
         user: { name: `${first} ${last}`, terms_of_use: true },
-        pseudonym: { unique_id: email, send_confirmation: true },
+        pseudonym: {
+          unique_id: email,
+          sis_user_id: String(sisUserId),
+          send_confirmation: true,
+        },
         communication_channel: { type: "email", address: email, skip_confirmation: false },
       }),
     },
@@ -87,6 +94,67 @@ async function createCanvasUser(env, { first, last, email }) {
   }
   const data = await res.json();
   return data.id;
+}
+
+// Finds a prior signup row for this email that already has a Canvas account,
+// so a repeat/duplicate signup reuses the same Canvas user instead of trying
+// (and failing) to create a second account with the same login email.
+async function findPriorCanvasSisId(env, { id, email }) {
+  const prior = await env.DB.prepare(
+    "SELECT id FROM signups WHERE email = ? AND id != ? AND canvas_user_id IS NOT NULL ORDER BY id DESC LIMIT 1",
+  )
+    .bind(email, id)
+    .first();
+  return prior ? String(prior.id) : null;
+}
+
+// Returns the Canvas SIS user id ("sis_user_id:<value>" form usable anywhere
+// Canvas accepts a user id) to enroll, creating the Canvas account if needed.
+async function findOrCreateCanvasSisId(env, { id, first, last, email }) {
+  const priorSisId = await findPriorCanvasSisId(env, { id, email });
+  if (priorSisId) {
+    return `sis_user_id:${priorSisId}`;
+  }
+  const canvasUserId = await createCanvasUser(env, { first, last, email, sisUserId: id });
+  await env.DB.prepare("UPDATE signups SET canvas_user_id = ? WHERE id = ?")
+    .bind(String(canvasUserId), id)
+    .run();
+  return `sis_user_id:${id}`;
+}
+
+async function hasActiveCanvasEnrollment(env, { sisId, courseId }) {
+  const res = await fetch(
+    `${env.CANVAS_BASE_URL}/api/v1/courses/${courseId}/enrollments?user_id=${sisId}`,
+    { headers: { Authorization: `Bearer ${env.CANVAS_API_TOKEN}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`Canvas error ${res.status}: ${await res.text()}`);
+  }
+  const enrollments = await res.json();
+  return enrollments.some((e) => ["active", "pending", "invited"].includes(e.enrollment_state));
+}
+
+async function enrollInCanvasCourse(env, { sisId, courseId }) {
+  if (await hasActiveCanvasEnrollment(env, { sisId, courseId })) {
+    return; // already enrolled, avoid creating a duplicate enrollment
+  }
+  const res = await fetch(`${env.CANVAS_BASE_URL}/api/v1/courses/${courseId}/enrollments`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.CANVAS_API_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      enrollment: {
+        user_id: sisId,
+        role: env.CANVAS_ENROLLMENT_ROLE,
+        enrollment_state: "active",
+      },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Canvas enrollment error ${res.status}: ${await res.text()}`);
+  }
 }
 
 function rejectSilently(env) {
@@ -214,18 +282,26 @@ async function handleDecision(request, env) {
 
   // action === "approve"
   try {
-    const canvasUserId = await createCanvasUser(env, {
+    const sisId = await findOrCreateCanvasSisId(env, {
+      id: row.id,
       first: row.first_name,
       last: row.last_name,
       email: row.email,
     });
-    await env.DB.prepare(
-      "UPDATE signups SET status = 'approved', decided_at = ?, canvas_user_id = ? WHERE id = ?",
-    )
-      .bind(new Date().toISOString(), String(canvasUserId), id)
+
+    const courseIds = [];
+    if (row.join_accelerator === "Yes") courseIds.push(env.CANVAS_PSA_COURSE_ID);
+    if (row.join_many_languages === "Yes") courseIds.push(env.CANVAS_ML_COURSE_ID);
+
+    for (const courseId of courseIds) {
+      await enrollInCanvasCourse(env, { sisId, courseId });
+    }
+
+    await env.DB.prepare("UPDATE signups SET status = 'approved', decided_at = ? WHERE id = ?")
+      .bind(new Date().toISOString(), id)
       .run();
     return html(
-      `<h3>Approved</h3><p>${row.first_name} ${row.last_name} was created in Canvas (user #${canvasUserId}) and will receive a confirmation email from Canvas.</p>`,
+      `<h3>Approved</h3><p>${row.first_name} ${row.last_name} was added to Canvas (${sisId}) and enrolled as Researcher in ${courseIds.length} course(s).</p>`,
     );
   } catch (err) {
     return html(
@@ -269,12 +345,62 @@ async function handleExport(request, env) {
   });
 }
 
+// Manual admin path for enrolling rows that are already `approved` (e.g.
+// imported legacy members) and so never go through the pending /decision
+// flow. Same underlying logic as an approve click, just addressable by id
+// with explicit course flags instead of reading join_accelerator/ml off the row.
+async function handleAdminEnroll(request, env) {
+  const auth = request.headers.get("Authorization") || "";
+  if (auth !== `Bearer ${env.HMAC_SECRET}`) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  const body = await request.json();
+  const id = Number(body.sis_id);
+  const wantPsa = !!body.psa;
+  const wantMl = !!body.ml;
+
+  const row = await env.DB.prepare("SELECT * FROM signups WHERE id = ?").bind(id).first();
+  if (!row) {
+    return new Response(JSON.stringify({ ok: false, error: "not found" }), { status: 404 });
+  }
+
+  const first = row.first_name || row.email.split("@")[0];
+  const last = row.last_name || "(legacy)";
+
+  try {
+    const sisId = await findOrCreateCanvasSisId(env, { id: row.id, first, last, email: row.email });
+
+    const courseIds = [];
+    if (wantPsa) courseIds.push(env.CANVAS_PSA_COURSE_ID);
+    if (wantMl) courseIds.push(env.CANVAS_ML_COURSE_ID);
+    for (const courseId of courseIds) {
+      await enrollInCanvasCourse(env, { sisId, courseId });
+    }
+
+    await env.DB.prepare(
+      "UPDATE signups SET join_accelerator = ?, join_many_languages = ? WHERE id = ?",
+    )
+      .bind(wantPsa ? "Yes" : "No", wantMl ? "Yes" : "No", id)
+      .run();
+
+    return new Response(JSON.stringify({ ok: true, sisId, courses: courseIds.length }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 500 });
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders(env) });
+    }
+
+    if (url.pathname === "/admin/enroll" && request.method === "POST") {
+      return handleAdminEnroll(request, env);
     }
 
     if (url.pathname === "/submit" && request.method === "POST") {
