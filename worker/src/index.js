@@ -157,9 +157,15 @@ async function enrollInCanvasCourse(env, { sisId, courseId }) {
   }
 }
 
-function rejectSilently(env) {
+async function rejectSilently(env, { ip, reason, first, last, email, notes }) {
   // Looks identical to a real success response so scripted spam doesn't learn
-  // what tripped the filter and adapt.
+  // what tripped the filter and adapt. The real submission still gets logged
+  // to blocked_signups so it can be reviewed later.
+  await env.DB.prepare(
+    "INSERT INTO blocked_signups (created_at, ip, reason, first_name, last_name, email, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  )
+    .bind(new Date().toISOString(), ip, reason, first, last, email, notes)
+    .run();
   return new Response(JSON.stringify({ ok: true }), {
     headers: { "Content-Type": "application/json", ...corsHeaders(env) },
   });
@@ -177,6 +183,7 @@ async function handleSubmit(request, env) {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
   const now = new Date();
   const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+  const blockedInfo = { ip, first, last, email, notes };
 
   await env.DB.prepare("INSERT INTO submission_attempts (ip, created_at) VALUES (?, ?)")
     .bind(ip, now.toISOString())
@@ -189,18 +196,18 @@ async function handleSubmit(request, env) {
     .first();
 
   if (count > Number(env.RATE_LIMIT_PER_HOUR)) {
-    return rejectSilently(env);
+    return rejectSilently(env, { ...blockedInfo, reason: "rate_limit" });
   }
 
   // Honeypot field: real users never fill this in, bots often do.
   if (body.website) {
-    return rejectSilently(env);
+    return rejectSilently(env, { ...blockedInfo, reason: "honeypot" });
   }
 
   // Time-trap: a real person needs at least a few seconds to fill out the form.
   const elapsed = Date.now() - Number(body.renderedAt || 0);
   if (!Number.isFinite(elapsed) || elapsed < Number(env.MIN_SUBMIT_MS)) {
-    return rejectSilently(env);
+    return rejectSilently(env, { ...blockedInfo, reason: "time_trap" });
   }
 
   if (!first || !last || !email) {
@@ -345,6 +352,30 @@ async function handleExport(request, env) {
   });
 }
 
+async function handleExportBlocked(request, env) {
+  const auth = request.headers.get("Authorization") || "";
+  if (auth !== `Bearer ${env.HMAC_SECRET}`) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  const { results } = await env.DB.prepare(
+    "SELECT * FROM blocked_signups ORDER BY id DESC",
+  ).all();
+  const header = "id,created_at,ip,reason,first_name,last_name,email,notes";
+  const escape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const rows = results.map((r) =>
+    [r.id, r.created_at, r.ip, r.reason, r.first_name, r.last_name, r.email, r.notes]
+      .map(escape)
+      .join(","),
+  );
+  const csv = [header, ...rows].join("\n");
+  return new Response(csv, {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": "attachment; filename=blocked_signups.csv",
+    },
+  });
+}
+
 // Manual admin path for enrolling rows that are already `approved` (e.g.
 // imported legacy members) and so never go through the pending /decision
 // flow. Same underlying logic as an approve click, just addressable by id
@@ -420,6 +451,10 @@ export default {
 
     if (url.pathname === "/export" && request.method === "GET") {
       return handleExport(request, env);
+    }
+
+    if (url.pathname === "/export/blocked" && request.method === "GET") {
+      return handleExportBlocked(request, env);
     }
 
     return new Response("Not found", { status: 404 });

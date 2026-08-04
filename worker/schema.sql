@@ -23,3 +23,18 @@ CREATE TABLE IF NOT EXISTS submission_attempts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_attempts_ip_time ON submission_attempts(ip, created_at);
+
+-- Audit log of submissions rejected by spam filters (honeypot, time-trap,
+-- rate limit) so they can be reviewed later instead of vanishing silently.
+CREATE TABLE IF NOT EXISTS blocked_signups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  reason TEXT NOT NULL, -- 'rate_limit' | 'honeypot' | 'time_trap'
+  first_name TEXT,
+  last_name TEXT,
+  email TEXT,
+  notes TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_blocked_created ON blocked_signups(created_at);
