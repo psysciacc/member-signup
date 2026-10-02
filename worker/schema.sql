@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS blocked_signups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   created_at TEXT NOT NULL,
   ip TEXT NOT NULL,
-  reason TEXT NOT NULL, -- 'rate_limit' | 'honeypot' | 'time_trap'
+  reason TEXT NOT NULL, -- 'rate_limit' | 'honeypot' | 'time_trap' | 'duplicate_email'
   first_name TEXT,
   last_name TEXT,
   email TEXT,

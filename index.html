@@ -130,6 +130,10 @@
             : "No";
           const website = document.getElementById("website").value.trim();
 
+          // Prevent double-click double submissions.
+          const submitButton = this.querySelector('button[type="submit"]');
+          submitButton.disabled = true;
+
           try {
             const response = await fetch(WORKER_URL, {
               method: "POST",
@@ -147,6 +151,22 @@
                 renderedAt: formRenderedAt,
               }),
             });
+
+            if (response.status === 409) {
+              document.getElementById("signupForm").innerHTML = `
+                <h3>You've already signed up</h3>
+                <p>
+                  We already have a signup on file for this email address, so a new
+                  one was not created.
+                </p>
+                <p>
+                  If you are waiting on approval, no further action is needed. If you
+                  need help accessing Canvas or joining another group, please contact
+                  the PSA team.
+                </p>
+              `;
+              return;
+            }
 
             if (!response.ok) {
               throw new Error("Submission failed");

@@ -217,13 +217,29 @@ async function handleSubmit(request, env) {
     });
   }
 
+  // One signup per email (case-insensitive), including legacy imported members.
+  // The existence check and insert are a single statement so a double-click
+  // can't slip two rows in between a separate SELECT and INSERT.
   const createdAt = new Date().toISOString();
   const result = await env.DB.prepare(
     `INSERT INTO signups (created_at, first_name, last_name, email, notes, join_accelerator, join_many_languages, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+     SELECT ?, ?, ?, ?, ?, ?, ?, 'pending'
+     WHERE NOT EXISTS (SELECT 1 FROM signups WHERE lower(email) = lower(?))`,
   )
-    .bind(createdAt, first, last, email, notes, joinAccelerator, joinManyLanguages)
+    .bind(createdAt, first, last, email, notes, joinAccelerator, joinManyLanguages, email)
     .run();
+
+  if (result.meta.changes === 0) {
+    await env.DB.prepare(
+      "INSERT INTO blocked_signups (created_at, ip, reason, first_name, last_name, email, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+      .bind(createdAt, ip, "duplicate_email", first, last, email, notes)
+      .run();
+    return new Response(JSON.stringify({ ok: false, error: "duplicate_email" }), {
+      status: 409,
+      headers: { "Content-Type": "application/json", ...corsHeaders(env) },
+    });
+  }
 
   const id = result.meta.last_row_id;
 
