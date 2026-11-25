@@ -4,3 +4,4 @@ node_modules/
 .env
 *.csv
 cleanup/
+scripts/__pycache__/fix_sis_ids.cpython-314.pyc
